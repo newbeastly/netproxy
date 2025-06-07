@@ -1,14 +1,9 @@
-- name: 安装依赖
-  run: pip install pyyaml requests
-
-- name: Run Cloudflare DNS Update
-  env:
-    CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-    CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-    CLOUDFLARE_DOMAIN: ${{ secrets.CLOUDFLARE_DOMAIN }}
-  run: |
-    cat > script.py <<'EOF'
-import os,glob,zipfile, yaml,requests,time
+import os
+import glob
+import zipfile
+import yaml
+import requests
+import time
 from datetime import datetime, timezone, timedelta
 
 api_token = os.environ['CLOUDFLARE_API_KEY']
@@ -108,5 +103,6 @@ for idx, ip in enumerate(ips, 1):
     resp = requests.post(url, json=data, headers=headers)
     print(f"Add {record_name} {ip}: {resp.json()}")
     time.sleep(0.5)
-EOF
-    python script.py
+
+
+
