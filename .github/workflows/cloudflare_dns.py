@@ -1,19 +1,18 @@
-- name: 安装依赖
-  run: pip install pyyaml requests
-
-- name: Run Cloudflare DNS Update
-  env:
-    CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-    CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-    CLOUDFLARE_DOMAIN: ${{ secrets.CLOUDFLARE_DOMAIN }}
-  run: |
-    cat > script.py <<'EOF'
-import os,glob,zipfile, yaml,requests,time
+import os
+import glob
+import zipfile
+import yaml
+import requests
+import time
 from datetime import datetime, timezone, timedelta
 
-api_token = os.environ['CLOUDFLARE_API_KEY']
-zone_id = os.environ['CLOUDFLARE_ZONE_ID']
-domain = os.environ['CLOUDFLARE_DOMAIN']
+# 获取 Cloudflare 相关环境变量
+api_token = os.environ.get('CLOUDFLARE_API_KEY')
+zone_id = os.environ.get('CLOUDFLARE_ZONE_ID')
+domain = os.environ.get('CLOUDFLARE_DOMAIN')
+
+if not (api_token and zone_id and domain):
+    raise RuntimeError("请设置 CLOUDFLARE_API_KEY、CLOUDFLARE_ZONE_ID、CLOUDFLARE_DOMAIN 环境变量")
 
 def extract_ips_from_txt(filename):
     with open(filename) as f:
@@ -44,7 +43,7 @@ def extract_ips_from_zip(filename):
                         ips += y
     return ips
 
-# 汇总ip目录下所有IP
+# 汇总ip目录下所有IP，去重
 ips = set()
 for fn in glob.glob("ip/*"):
     if fn.endswith('.txt'):
@@ -53,7 +52,7 @@ for fn in glob.glob("ip/*"):
         ips.update(extract_ips_from_yaml(fn))
     elif fn.endswith('.zip'):
         ips.update(extract_ips_from_zip(fn))
-ips = list({ip for ip in ips if ip})  # 去重
+ips = list({ip for ip in ips if ip})
 
 headers = {
     "Authorization": f"Bearer {api_token}",
@@ -108,5 +107,3 @@ for idx, ip in enumerate(ips, 1):
     resp = requests.post(url, json=data, headers=headers)
     print(f"Add {record_name} {ip}: {resp.json()}")
     time.sleep(0.5)
-EOF
-    python script.py
