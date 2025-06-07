@@ -2,11 +2,11 @@ name: Auto Sync IPs to Cloudflare
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 */3 * * *'
   push:
     paths:
       - 'ip/**'
-  schedule:
-    - cron: '0 */3 * * *'
 
 jobs:
   update-dns:
@@ -23,7 +23,13 @@ jobs:
       - name: Install dependencies
         run: pip install requests pyyaml
 
-      - name: Unzip any zip files in ip/
+      - name: Create ip directory
+        run: mkdir -p ip
+
+      - name: Download baipiao zip
+        run: curl -L -o ip/baipiao.zip https://zip.baipiao.eu.org/
+
+      - name: Unzip all zip files in ip/
         run: |
           for file in ip/*.zip; do
             [ -e "$file" ] && unzip -o "$file" -d ip/
