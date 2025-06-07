@@ -1,3 +1,5 @@
+- name: 安装依赖
+  run: pip install pyyaml requests
 - name: Run Cloudflare DNS Update
   env:
     CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
