@@ -155,8 +155,13 @@ def delete_record(record_id):
     print(f"Deleted record {record_id}: {resp.status_code}")
 
 def parse_cloudflare_time(timestr):
-    """解析Cloudflare时间格式"""
-    return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
+    """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
+    try:
+        # 尝试带微秒格式
+        return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%S.%fZ")
+    except ValueError:
+        # 尝试不带微秒格式
+        return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
 
 record_name = f"netproxy.{domain}"
 now = datetime.datetime.utcnow()
