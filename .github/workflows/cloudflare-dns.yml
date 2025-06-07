@@ -1,5 +1,6 @@
 - name: 安装依赖
   run: pip install pyyaml requests
+
 - name: Run Cloudflare DNS Update
   env:
     CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
@@ -7,7 +8,7 @@
     CLOUDFLARE_DOMAIN: ${{ secrets.CLOUDFLARE_DOMAIN }}
   run: |
     cat > script.py <<'EOF'
-import os, glob, zipfile, yaml, requests, time
+import os,glob,zipfile, yaml,requests,time
 from datetime import datetime, timezone, timedelta
 
 api_token = os.environ['CLOUDFLARE_API_KEY']
