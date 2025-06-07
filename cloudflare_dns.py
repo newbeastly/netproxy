@@ -1,15 +1,18 @@
+print("=== [DEBUG] cloudflare_dns.py start ===")
+
 import os
 import glob
 import zipfile
 import yaml
 import requests
 import time
-from datetime import datetime, timezone, timedelta
 
 # 获取 Cloudflare 相关环境变量
 api_token = os.environ.get('CLOUDFLARE_API_KEY')
 zone_id = os.environ.get('CLOUDFLARE_ZONE_ID')
 domain = os.environ.get('CLOUDFLARE_DOMAIN')
+
+print(f"[DEBUG] DOMAIN={domain}, ZONE_ID={zone_id}, API_TOKEN={'SET' if api_token else 'MISSING'}")
 
 if not (api_token and zone_id and domain):
     raise RuntimeError("请设置 CLOUDFLARE_API_KEY、CLOUDFLARE_ZONE_ID、CLOUDFLARE_DOMAIN 环境变量")
@@ -53,6 +56,12 @@ for fn in glob.glob("ip/*"):
     elif fn.endswith('.zip'):
         ips.update(extract_ips_from_zip(fn))
 ips = list({ip for ip in ips if ip})
+
+print("[DEBUG] IPs to add:", ips)
+
+if not ips:
+    print("[WARNING] 没有找到任何可用IP，脚本结束。")
+    exit(0)
 
 headers = {
     "Authorization": f"Bearer {api_token}",
@@ -102,3 +111,5 @@ for ip in ips:
     resp = requests.post(url, json=data, headers=headers)
     print(f"Add {record_name} {ip}: {resp.json()}")
     time.sleep(0.5)
+
+print("=== [DEBUG] cloudflare_dns.py end ===")
