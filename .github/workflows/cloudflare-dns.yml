@@ -1,47 +1,10 @@
-name: Auto Sync IPs to Cloudflare
-
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 */3 * * *'
-  push:
-    paths:
-      - 'ip/**'
-
-jobs:
-  update-dns:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install dependencies
-        run: pip install requests pyyaml
-
-      - name: Create ip directory
-        run: mkdir -p ip
-
-      - name: Download baipiao zip
-        run: curl -L -o ip/baipiao.zip https://zip.baipiao.eu.org/
-
-      - name: Unzip all zip files in ip/
-        run: |
-          for file in ip/*.zip; do
-            [ -e "$file" ] && unzip -o "$file" -d ip/
-          done
-
-      - name: Run Cloudflare DNS Update
-        env:
-          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          CLOUDFLARE_DOMAIN: ${{ secrets.CLOUDFLARE_DOMAIN }}
-        run: |
-          python <<EOF
+- name: Run Cloudflare DNS Update
+  env:
+    CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+    CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+    CLOUDFLARE_DOMAIN: ${{ secrets.CLOUDFLARE_DOMAIN }}
+  run: |
+    cat > script.py <<'EOF'
 import os, glob, zipfile, yaml, requests, time
 from datetime import datetime, timezone, timedelta
 
@@ -143,3 +106,4 @@ for idx, ip in enumerate(ips, 1):
     print(f"Add {record_name} {ip}: {resp.json()}")
     time.sleep(0.5)
 EOF
+    python script.py
