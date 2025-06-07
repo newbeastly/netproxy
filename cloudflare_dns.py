@@ -96,6 +96,18 @@ def extract_ips_from_url(url):
         print(f"[ERROR] 下载远程IP列表失败 {url} : {e}")
         return []
 
+def extract_ips_from_any_file(filename):
+    """通用正则提取所有本地文件中的IP地址"""
+    ips = []
+    try:
+        with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        found = re.findall(r'(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)', content)
+        ips = [ip for ip in found if is_valid_ip(ip)]
+    except Exception as e:
+        print(f"[ERROR] 读取文件失败: {e}")
+    return ips
+
 # 1. 读取远程源
 ips = set()
 remote_url_file = 'ip/url'
@@ -106,19 +118,13 @@ if os.path.exists(remote_url_file):
             if url:
                 ips.update(extract_ips_from_url(url))
 
-# 2. 读取本地上传
+# 2. 读取本地上传（无论什么格式都正则扫描IP）
 local_dir = 'ip/local'
 if os.path.isdir(local_dir):
     for fn in os.listdir(local_dir):
         path = os.path.join(local_dir, fn)
-        if fn.endswith('.txt'):
-            ips.update(extract_ips_from_txt(path))
-        elif fn.endswith('.yaml') or fn.endswith('.yml'):
-            ips.update(extract_ips_from_yaml(path))
-        elif fn.endswith('.zip'):
-            ips.update(extract_ips_from_zip(path))
-        elif fn.endswith('.rar'):
-            ips.update(extract_ips_from_rar(path))
+        if os.path.isfile(path):  # 只处理文件，不处理子目录
+            ips.update(extract_ips_from_any_file(path))
 
 ips = list(ips)
 print("[DEBUG] 本次收集到的待添加IP:", ips)
