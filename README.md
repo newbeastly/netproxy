@@ -1,0 +1,1 @@
+URL用来存储远程带有IP地址的URL地址，local用来本地上传含有IP地址的文件，支持txt，zip，yaml，rar格式，支持手动触发Action工作流
