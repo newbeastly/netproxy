@@ -1,1 +1,29 @@
+name: Run Cloudflare DNS Script
 
+on:
+  schedule:
+    - cron: '0 */3 * * *'   # 每3小时运行一次
+  workflow_dispatch:
+
+jobs:
+  run-cloudflare-dns:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install requirements
+        run: pip install -r requirements.txt
+
+      - name: Run cloudflare_dns.py
+        env:
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_DOMAIN: ${{ secrets.CLOUDFLARE_DOMAIN }}
+        run: python .github/workflows/cloudflare_dns.py
