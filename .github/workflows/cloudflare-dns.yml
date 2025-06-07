@@ -6,6 +6,7 @@ import requests
 import time
 from datetime import datetime, timezone, timedelta
 
+# 获取环境变量
 api_token = os.environ['CLOUDFLARE_API_KEY']
 zone_id = os.environ['CLOUDFLARE_ZONE_ID']
 domain = os.environ['CLOUDFLARE_DOMAIN']
@@ -39,7 +40,7 @@ def extract_ips_from_zip(filename):
                         ips += y
     return ips
 
-# 汇总ip目录下所有IP
+# 汇总 ip 目录下所有 IP
 ips = set()
 for fn in glob.glob("ip/*"):
     if fn.endswith('.txt'):
@@ -72,26 +73,31 @@ def delete_record(record_id):
     resp = requests.delete(url, headers=headers)
     print(f"Deleted record {record_id}: {resp.status_code}")
 
-# 删除所有超过24小时的 proxy<n>.<domain> 的A记录
+# 删除所有超过 24 小时的 proxy<n>.<domain> 的 A 记录
 existing_records = list_a_records()
 now = datetime.now(timezone.utc)
-for rec in existing_records:
-    if rec["name"].startswith("proxy") and rec["name"].endswith(domain):
-        created = datetime.strptime(rec["created_on"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-        if now - created > timedelta(hours=24):
-            delete_record(rec["id"])
+records_to_delete = [
+    rec for rec in existing_records 
+    if rec["name"].startswith("proxy") and rec["name"].endswith(domain)
+]
 
-# 遍历ip，按 proxy1.domain, proxy2.domain ... 重新写入
+for rec in records_to_delete:
+    created = datetime.strptime(rec["created_on"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    if now - created > timedelta(hours=24):
+        delete_record(rec["id"])
+        time.sleep(0.2)
+
+# 遍历 ip，按 proxy1.domain, proxy2.domain ... 重新写入
 for idx, ip in enumerate(ips, 1):
     record_name = f"proxy{idx}.{domain}"
 
-    # 查找同名A记录
+    # 查找同名 A 记录并删除
     matched = [r for r in existing_records if r["name"] == record_name]
     for rec in matched:
         delete_record(rec["id"])
         time.sleep(0.2)
 
-    # 添加新A记录
+    # 添加新 A 记录
     data = {
         "type": "A",
         "name": record_name,
