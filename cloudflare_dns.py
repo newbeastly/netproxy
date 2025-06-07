@@ -65,6 +65,10 @@ def list_a_records():
     page = 1
     while True:
         resp = requests.get(url + f"&page={page}", headers=headers).json()
+        # 增加健壮性判断和调试输出
+        if not resp.get("success") or "result" not in resp:
+            print("Cloudflare API 返回异常：", resp)
+            break
         result += resp['result']
         if page >= resp['result_info']['total_pages']:
             break
