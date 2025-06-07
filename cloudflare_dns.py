@@ -1,57 +1,86 @@
-print("=== [DEBUG] cloudflare_dns.py start ===")
-
 import os
-import glob
 import zipfile
 import yaml
 import requests
 import time
 import re
+import rarfile
 
-# 获取 Cloudflare 相关环境变量
+# 环境变量
 api_token = os.environ.get('CLOUDFLARE_API_KEY')
 zone_id = os.environ.get('CLOUDFLARE_ZONE_ID')
 domain = os.environ.get('CLOUDFLARE_DOMAIN')
 
-print(f"[DEBUG] DOMAIN={domain}, ZONE_ID={zone_id}, API_TOKEN={'SET' if api_token else 'MISSING'}")
-
-if not (api_token and zone_id and domain):
-    raise RuntimeError("请设置 CLOUDFLARE_API_KEY、CLOUDFLARE_ZONE_ID、CLOUDFLARE_DOMAIN 环境变量")
-
-# 正则+数值检查，确保是合法IPv4
 def is_valid_ip(ip):
     if not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip):
         return False
     return all(0 <= int(x) <= 255 for x in ip.split('.'))
 
-def extract_ips_from_txt(filename):
-    with open(filename) as f:
-        return [line.strip() for line in f if is_valid_ip(line.strip())]
+def extract_ips_from_txt(filename_or_obj):
+    ips = []
+    try:
+        if hasattr(filename_or_obj, 'read'):
+            lines = filename_or_obj.read().decode() if hasattr(filename_or_obj, 'decode') else filename_or_obj.read()
+            if isinstance(lines, bytes): lines = lines.decode()
+            lines = lines.splitlines()
+        else:
+            with open(filename_or_obj) as f:
+                lines = f.readlines()
+        for line in lines:
+            line = line.strip()
+            if is_valid_ip(line):
+                ips.append(line)
+    except Exception as e:
+        print(f"[ERROR] 读取TXT失败: {e}")
+    return ips
 
-def extract_ips_from_yaml(filename):
-    with open(filename) as f:
-        y = yaml.safe_load(f)
-        ips = []
+def extract_ips_from_yaml(filename_or_obj):
+    ips = []
+    try:
+        if hasattr(filename_or_obj, 'read'):
+            content = filename_or_obj.read().decode() if hasattr(filename_or_obj, 'decode') else filename_or_obj.read()
+            if isinstance(content, bytes): content = content.decode()
+            y = yaml.safe_load(content)
+        else:
+            with open(filename_or_obj) as f:
+                y = yaml.safe_load(f)
         if isinstance(y, dict) and 'ips' in y:
             ips = y['ips']
         elif isinstance(y, list):
             ips = y
-        return [ip.strip() for ip in ips if isinstance(ip, str) and is_valid_ip(ip.strip())]
+        ips = [ip.strip() for ip in ips if isinstance(ip, str) and is_valid_ip(ip.strip())]
+    except Exception as e:
+        print(f"[ERROR] 读取YAML失败: {e}")
+    return ips
 
 def extract_ips_from_zip(filename):
     ips = []
-    with zipfile.ZipFile(filename) as z:
-        for name in z.namelist():
-            if name.endswith('.txt'):
-                with z.open(name) as f:
-                    ips += [line.decode().strip() for line in f if is_valid_ip(line.decode().strip())]
-            elif name.endswith('.yaml') or name.endswith('.yml'):
-                with z.open(name) as f:
-                    y = yaml.safe_load(f)
-                    if isinstance(y, dict) and 'ips' in y:
-                        ips += [ip.strip() for ip in y['ips'] if isinstance(ip, str) and is_valid_ip(ip.strip())]
-                    elif isinstance(y, list):
-                        ips += [ip.strip() for ip in y if isinstance(ip, str) and is_valid_ip(ip.strip())]
+    try:
+        with zipfile.ZipFile(filename) as z:
+            for name in z.namelist():
+                if name.endswith('.txt'):
+                    with z.open(name) as f:
+                        ips += extract_ips_from_txt(f)
+                elif name.endswith('.yaml') or name.endswith('.yml'):
+                    with z.open(name) as f:
+                        ips += extract_ips_from_yaml(f)
+    except Exception as e:
+        print(f"[ERROR] 读取ZIP失败: {e}")
+    return ips
+
+def extract_ips_from_rar(filename):
+    ips = []
+    try:
+        with rarfile.RarFile(filename) as r:
+            for name in r.namelist():
+                if name.endswith('.txt'):
+                    with r.open(name) as f:
+                        ips += extract_ips_from_txt(f)
+                elif name.endswith('.yaml') or name.endswith('.yml'):
+                    with r.open(name) as f:
+                        ips += extract_ips_from_yaml(f)
+    except Exception as e:
+        print(f"[ERROR] 读取RAR失败: {e}")
     return ips
 
 def extract_ips_from_url(url):
@@ -66,25 +95,31 @@ def extract_ips_from_url(url):
         print(f"[ERROR] 下载远程IP列表失败 {url} : {e}")
         return []
 
-# 汇总ip目录下所有IP，去重
+# 1. 读取远程源
 ips = set()
-for fn in glob.glob("ip/*"):
-    if fn.endswith('.txt'):
-        ips.update(extract_ips_from_txt(fn))
-    elif fn.endswith('.yaml') or fn.endswith('.yml'):
-        ips.update(extract_ips_from_yaml(fn))
-    elif fn.endswith('.zip'):
-        ips.update(extract_ips_from_zip(fn))
-    elif fn.endswith('.url'):
-        # 每个 .url 文件一行一个远程链接
-        with open(fn) as f:
-            for line in f:
-                link = line.strip()
-                if link:
-                    ips.update(extract_ips_from_url(link))
+remote_url_file = 'ip/url'
+if os.path.exists(remote_url_file):
+    with open(remote_url_file, encoding="utf-8") as f:
+        for line in f:
+            url = line.strip()
+            if url:
+                ips.update(extract_ips_from_url(url))
+
+# 2. 读取本地上传
+local_dir = 'ip/local'
+if os.path.isdir(local_dir):
+    for fn in os.listdir(local_dir):
+        path = os.path.join(local_dir, fn)
+        if fn.endswith('.txt'):
+            ips.update(extract_ips_from_txt(path))
+        elif fn.endswith('.yaml') or fn.endswith('.yml'):
+            ips.update(extract_ips_from_yaml(path))
+        elif fn.endswith('.zip'):
+            ips.update(extract_ips_from_zip(path))
+        elif fn.endswith('.rar'):
+            ips.update(extract_ips_from_rar(path))
 
 ips = list(ips)
-
 print("[DEBUG] IPs to add:", ips)
 
 if not ips:
@@ -116,17 +151,13 @@ def delete_record(record_id):
     resp = requests.delete(url, headers=headers)
     print(f"Deleted record {record_id}: {resp.status_code}")
 
-# 只操作 netproxy.<domain>
 record_name = f"netproxy.{domain}"
-
-# 查询所有现有的 netproxy.<domain> A记录并删除
 existing_records = list_a_records()
 for rec in existing_records:
     if rec["name"] == record_name:
         delete_record(rec["id"])
         time.sleep(0.2)
 
-# 给每个IP都添加 netproxy.<domain> 记录
 for ip in ips:
     data = {
         "type": "A",
@@ -139,5 +170,3 @@ for ip in ips:
     resp = requests.post(url, json=data, headers=headers)
     print(f"Add {record_name} {ip}: {resp.json()}")
     time.sleep(0.5)
-
-print("=== [DEBUG] cloudflare_dns.py end ===")
