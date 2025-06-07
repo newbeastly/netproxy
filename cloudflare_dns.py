@@ -6,6 +6,7 @@ import zipfile
 import yaml
 import requests
 import time
+import re
 
 # 获取 Cloudflare 相关环境变量
 api_token = os.environ.get('CLOUDFLARE_API_KEY')
@@ -17,18 +18,25 @@ print(f"[DEBUG] DOMAIN={domain}, ZONE_ID={zone_id}, API_TOKEN={'SET' if api_toke
 if not (api_token and zone_id and domain):
     raise RuntimeError("请设置 CLOUDFLARE_API_KEY、CLOUDFLARE_ZONE_ID、CLOUDFLARE_DOMAIN 环境变量")
 
+# 正则+数值检查，确保是合法IPv4
+def is_valid_ip(ip):
+    if not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip):
+        return False
+    return all(0 <= int(x) <= 255 for x in ip.split('.'))
+
 def extract_ips_from_txt(filename):
     with open(filename) as f:
-        return [line.strip() for line in f if line.strip()]
+        return [line.strip() for line in f if is_valid_ip(line.strip())]
 
 def extract_ips_from_yaml(filename):
     with open(filename) as f:
         y = yaml.safe_load(f)
+        ips = []
         if isinstance(y, dict) and 'ips' in y:
-            return y['ips']
+            ips = y['ips']
         elif isinstance(y, list):
-            return y
-        return []
+            ips = y
+        return [ip.strip() for ip in ips if isinstance(ip, str) and is_valid_ip(ip.strip())]
 
 def extract_ips_from_zip(filename):
     ips = []
@@ -36,15 +44,27 @@ def extract_ips_from_zip(filename):
         for name in z.namelist():
             if name.endswith('.txt'):
                 with z.open(name) as f:
-                    ips += [line.decode().strip() for line in f if line.strip()]
+                    ips += [line.decode().strip() for line in f if is_valid_ip(line.decode().strip())]
             elif name.endswith('.yaml') or name.endswith('.yml'):
                 with z.open(name) as f:
                     y = yaml.safe_load(f)
                     if isinstance(y, dict) and 'ips' in y:
-                        ips += y['ips']
+                        ips += [ip.strip() for ip in y['ips'] if isinstance(ip, str) and is_valid_ip(ip.strip())]
                     elif isinstance(y, list):
-                        ips += y
+                        ips += [ip.strip() for ip in y if isinstance(ip, str) and is_valid_ip(ip.strip())]
     return ips
+
+def extract_ips_from_url(url):
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        lines = resp.text.splitlines()
+        ips = [line.strip() for line in lines if is_valid_ip(line.strip())]
+        print(f"[DEBUG] 从远程 {url} 获取到 {len(ips)} 个合法IP")
+        return ips
+    except Exception as e:
+        print(f"[ERROR] 下载远程IP列表失败 {url} : {e}")
+        return []
 
 # 汇总ip目录下所有IP，去重
 ips = set()
@@ -55,7 +75,15 @@ for fn in glob.glob("ip/*"):
         ips.update(extract_ips_from_yaml(fn))
     elif fn.endswith('.zip'):
         ips.update(extract_ips_from_zip(fn))
-ips = list({ip for ip in ips if ip})
+    elif fn.endswith('.url'):
+        # 每个 .url 文件一行一个远程链接
+        with open(fn) as f:
+            for line in f:
+                link = line.strip()
+                if link:
+                    ips.update(extract_ips_from_url(link))
+
+ips = list(ips)
 
 print("[DEBUG] IPs to add:", ips)
 
