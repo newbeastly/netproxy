@@ -65,7 +65,6 @@ def list_a_records():
     page = 1
     while True:
         resp = requests.get(url + f"&page={page}", headers=headers).json()
-        # 增加健壮性判断和调试输出
         if not resp.get("success") or "result" not in resp:
             print("Cloudflare API 返回异常：", resp)
             break
@@ -80,26 +79,18 @@ def delete_record(record_id):
     resp = requests.delete(url, headers=headers)
     print(f"Deleted record {record_id}: {resp.status_code}")
 
-# 删除所有超过24小时的 proxy<n>.<domain> 的A记录
+# 只操作 netproxy.<domain>
+record_name = f"netproxy.{domain}"
+
+# 查询所有现有的 netproxy.<domain> A记录并删除
 existing_records = list_a_records()
-now = datetime.now(timezone.utc)
 for rec in existing_records:
-    if rec["name"].startswith("proxy") and rec["name"].endswith(domain):
-        created = datetime.strptime(rec["created_on"], "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-        if now - created > timedelta(hours=24):
-            delete_record(rec["id"])
-
-# 遍历ip，按 proxy1.domain, proxy2.domain ... 重新写入
-for idx, ip in enumerate(ips, 1):
-    record_name = f"proxy{idx}.{domain}"
-
-    # 查找同名A记录
-    matched = [r for r in existing_records if r["name"] == record_name]
-    for rec in matched:
+    if rec["name"] == record_name:
         delete_record(rec["id"])
         time.sleep(0.2)
 
-    # 添加新A记录
+# 给每个IP都添加 netproxy.<domain> 记录
+for ip in ips:
     data = {
         "type": "A",
         "name": record_name,
