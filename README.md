@@ -1,1 +1,2 @@
 URL用来存储远程带有IP地址的URL地址，local用来本地上传含有IP地址的文件，支持txt，zip，yaml，rar格式，支持手动触发Action工作流
+需要在setting———Secrets and variables——Action——Repository secrets添加环境变量设置自己的API等数据包括CLOUDFLARE_API_KEY，CLOUDFLARE_DOMAIN（主域名）和CLOUDFLARE_ZONE_ID，不懂的去问AI怎么获取
