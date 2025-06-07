@@ -164,7 +164,7 @@ for ip in ips:
         "name": record_name,
         "content": ip,
         "ttl": 1,
-        "proxied": True
+        "proxied": False  # <--- 关闭代理，变为“灰色云朵”
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
     resp = requests.post(url, json=data, headers=headers)
