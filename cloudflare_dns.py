@@ -5,6 +5,7 @@ import requests
 import time
 import re
 import rarfile
+import datetime
 
 # 环境变量
 api_token = os.environ.get('CLOUDFLARE_API_KEY')
@@ -120,7 +121,7 @@ if os.path.isdir(local_dir):
             ips.update(extract_ips_from_rar(path))
 
 ips = list(ips)
-print("[DEBUG] IPs to add:", ips)
+print("[DEBUG] 本次收集到的待添加IP:", ips)
 
 if not ips:
     print("[WARNING] 没有找到任何可用IP，脚本结束。")
@@ -132,6 +133,7 @@ headers = {
 }
 
 def list_a_records():
+    """获取所有A记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&per_page=100"
     result = []
     page = 1
@@ -147,24 +149,58 @@ def list_a_records():
     return result
 
 def delete_record(record_id):
+    """删除指定ID的记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}"
     resp = requests.delete(url, headers=headers)
     print(f"Deleted record {record_id}: {resp.status_code}")
 
-record_name = f"netproxy.{domain}"
-existing_records = list_a_records()
-for rec in existing_records:
-    if rec["name"] == record_name:
-        delete_record(rec["id"])
-        time.sleep(0.2)
+def parse_cloudflare_time(timestr):
+    """解析Cloudflare时间格式"""
+    return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
 
-for ip in ips:
+record_name = f"netproxy.{domain}"
+now = datetime.datetime.utcnow()
+
+# 3. 查询所有 netproxy.<domain> 的 A记录
+all_a_records = list_a_records()
+netproxy_records = [rec for rec in all_a_records if rec['name'] == record_name]
+
+# 4. 检查是否有超时(>3小时)记录
+expired_ids = []
+unexpired_ips = set()
+for rec in netproxy_records:
+    created_on = parse_cloudflare_time(rec.get('created_on', "1970-01-01T00:00:00Z"))
+    age_hours = (now - created_on).total_seconds() / 3600
+    if age_hours > 3:
+        expired_ids.append(rec['id'])
+    else:
+        unexpired_ips.add(rec['content'])
+
+if expired_ids:
+    print(f"[INFO] 存在 {len(expired_ids)} 条超过3小时的 netproxy 记录，将删除这些记录。")
+    for record_id in expired_ids:
+        delete_record(record_id)
+        time.sleep(0.2)
+else:
+    print("[INFO] 所有 netproxy 记录均未超过3小时，将直接添加新IP。")
+
+# 5. 合并未超时的旧IP和本次新IP，去重，最多只保留50条
+all_ips = list(unexpired_ips.union(set(ips)))
+all_ips = all_ips[:50]  # 最多50条
+
+print("[DEBUG] 最终将添加的IP列表：", all_ips)
+
+# 6. 添加新IP记录（避免Cloudflare报错，可以先检查已存在IP是否已存在于现有记录，若已存在可不再添加；如果要全量覆盖可全加）
+for ip in all_ips:
+    # 不重复添加已存在的未超时IP
+    if ip in unexpired_ips:
+        continue
     data = {
         "type": "A",
         "name": record_name,
         "content": ip,
         "ttl": 1,
-        "proxied": False  # <--- 关闭代理，变为“灰色云朵”
+        "proxied": False  # 关闭代理，灰色云朵
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
     resp = requests.post(url, json=data, headers=headers)
