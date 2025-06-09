@@ -130,30 +130,39 @@ def extract_ips_from_any_file(filename):
         print(f"[ERROR] 读取文件失败 {filename}: {e}")
     return ips
 
-# 1. 读取远程源
-ips = set()
-remote_url_file = 'ip/url'
-if os.path.exists(remote_url_file):
-    print(f"[INFO] 开始处理远程URL文件：{remote_url_file}")
-    with open(remote_url_file, encoding="utf-8") as f:
-        for line in f:
-            url = line.strip()
-            if url:
-                new_ips = extract_ips_from_url(url)
-                ips.update(new_ips)
-
-# 2. 读取本地上传（无论什么格式都正则扫描IP）
+# 采集IP逻辑：优选本地再补远程
+MAX_IPS = 10
 local_dir = 'ip/local'
+local_ips = set()
 if os.path.isdir(local_dir):
     print(f"[INFO] 开始扫描本地目录：{local_dir}")
     for fn in os.listdir(local_dir):
         path = os.path.join(local_dir, fn)
-        if os.path.isfile(path):  # 只处理文件，不处理子目录
+        if os.path.isfile(path):
             new_ips = extract_ips_from_any_file(path)
-            ips.update(new_ips)
+            local_ips.update(new_ips)
+local_ips = list(local_ips)
+print(f"[INFO] 本地收集到 {len(local_ips)} 个IP")
 
-ips = list(ips)
-print(f"[INFO] 本次总共收集到 {len(ips)} 个待添加IP")
+# 如本地不足MAX_IPS，再补充远程
+remote_ips = []
+if len(local_ips) < MAX_IPS:
+    url_file = 'ip/url'
+    if os.path.exists(url_file):
+        print(f"[INFO] 处理远程URL文件：{url_file}")
+        with open(url_file, encoding="utf-8") as f:
+            for line in f:
+                url = line.strip()
+                if url:
+                    new_ips = extract_ips_from_url(url)
+                    remote_ips.extend(new_ips)
+    # 去除已在本地的IP
+    remote_ips = [ip for ip in remote_ips if ip not in local_ips]
+    # 只补充到足额
+    need = MAX_IPS - len(local_ips)
+    remote_ips = remote_ips[:need]
+ips = local_ips + remote_ips
+print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：{ips}")
 
 if not ips:
     print("[WARNING] 没有找到任何可用IP，脚本结束。")
@@ -189,21 +198,19 @@ def delete_record(record_id):
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
     try:
-        # 尝试带微秒格式
         return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%S.%fZ")
     except ValueError:
-        # 尝试不带微秒格式
         return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
 
 record_name = f"netproxy.{domain}"
 now = datetime.datetime.utcnow()
 
-# 3. 查询所有 netproxy.<domain> 的 A记录
+# 查询所有 netproxy.<domain> 的 A记录
 print(f"[INFO] 开始查询域名 {record_name} 的现有记录")
 all_a_records = list_a_records()
 netproxy_records = [rec for rec in all_a_records if rec['name'] == record_name]
 
-# 4. 检查是否有超时(>3小时)记录
+# 检查是否有超时(>3小时)记录
 expired_ids = []
 unexpired_ips = set()
 for rec in netproxy_records:
@@ -222,17 +229,16 @@ if expired_ids:
 else:
     print("[INFO] 所有记录均未超过3小时")
 
-# 5. 合并未超时的旧IP和本次新IP，去重，最多只保留10条
+# 合并未超时的旧IP和本次新IP，去重，最多只保留10条
 all_ips = list(unexpired_ips.union(set(ips)))
 all_ips = all_ips[:10]  # 最多10条
 
 print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：{all_ips}")
 
-# 6. 添加新IP记录
+# 添加新IP记录
 new_added = 0
 skipped = 0
 for ip in all_ips:
-    # 不重复添加已存在的未超时IP
     if ip in unexpired_ips:
         skipped += 1
         continue
