@@ -222,9 +222,9 @@ if expired_ids:
 else:
     print("[INFO] 所有记录均未超过3小时")
 
-# 5. 合并未超时的旧IP和本次新IP，去重，最多只保留50条
+# 5. 合并未超时的旧IP和本次新IP，去重，最多只保留10条
 all_ips = list(unexpired_ips.union(set(ips)))
-all_ips = all_ips[:50]  # 最多50条
+all_ips = all_ips[:10]  # 最多10条
 
 print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：{all_ips}")
 
