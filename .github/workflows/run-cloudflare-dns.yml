@@ -1,4 +1,4 @@
-name: Run Cloudflare DNS Script
+name: 运行 Cloudflare DNS 脚本
 
 on:
   push:
@@ -13,19 +13,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: 配置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Install requirements
+      - name: 安装依赖
         run: |
           pip install -r requirements.txt
 
-      - name: Run cloudflare_dns.py
+      - name: 执行 cloudflare_dns.py
         env:
           CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
