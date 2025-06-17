@@ -214,7 +214,10 @@ def delete_record(record_id, ip):
     """删除指定ID的记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}"
     resp = requests.delete(url, headers=headers)
-    print(f"[INFO] 删除IP记录： {ip}")
+    if resp.status_code == 200:
+        print(f"[INFO] 删除IP记录： {ip}")
+    else:
+        print(f"[ERROR] 删除IP记录失败： {ip}, 响应: {resp.json()}")
 
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
@@ -231,56 +234,46 @@ print(f"[INFO] 开始查询域名 {record_name} 的现有记录")
 all_a_records = list_a_records()
 netproxy_records = [rec for rec in all_a_records if rec['name'] == record_name]
 
-# 检查是否有超时(>3小时)记录
-expired_ids = []
-unexpired_records = []
-for rec in netproxy_records:
-    created_on = parse_cloudflare_time(rec.get('created_on', "1970-01-01T00:00:00Z"))
-    age_hours = (now - created_on).total_seconds() / 3600
-    if age_hours > 3:
-        expired_ids.append((rec['id'], rec['content']))
-    else:
-        unexpired_records.append(rec)
+# 按创建时间降序排序，最新的在前面
+netproxy_records.sort(key=lambda x: parse_cloudflare_time(x.get('created_on', "1970-01-01T00:00:00Z")), reverse=True)
 
-if expired_ids:
-    print(f"[INFO] 发现 {len(expired_ids)} 条超过3小时的记录需要删除")
-    for record_id, ip in expired_ids:
-        delete_record(record_id, ip)
-        time.sleep(0.2)
-else:
-    print("[INFO] 所有记录均未超过3小时")
+# 计算需要保留的旧记录数量
+num_new_ips = len(ips)
+num_old_ips_to_keep = max(MAX_IPS - num_new_ips, 0)
 
-# 合并未超时的旧IP和本次新IP，去重并保持顺序
-current_ips_set = set([rec['content'] for rec in unexpired_records])
-final_ips = []
-for ip in ips:
-    if ip not in current_ips_set:
-        final_ips.append(ip)
-        current_ips_set.add(ip)
-    if len(final_ips) >= MAX_IPS:
-        break
+# 保留最新的旧记录
+old_ips_to_keep = [(rec['id'], rec['content']) for rec in netproxy_records[:num_old_ips_to_keep]]
 
-print(f"[INFO] 最终将添加 {len(final_ips)} 个IP记录：")
-for ip in final_ips:
-    print(ip)
-
-# 清理多余的记录，只保留最新的10条记录
-records_to_delete = []
-for rec in unexpired_records:
-    if rec['content'] not in final_ips:
-        records_to_delete.append((rec['id'], rec['content']))
+# 需要删除的所有旧记录（包括不需要保留的旧记录）
+records_to_delete = [(rec['id'], rec['content']) for rec in netproxy_records[num_old_ips_to_keep:]]
 
 if records_to_delete:
     print(f"[INFO] 需要删除 {len(records_to_delete)} 条多余记录以保持最多 {MAX_IPS} 条记录")
     for record_id, ip in records_to_delete:
         delete_record(record_id, ip)
         time.sleep(0.2)
+else:
+    print("[INFO] 所有记录均无需删除")
+
+# 合并未超时的旧IP和本次新IP，去重并保持顺序
+current_ips_set = set([rec['content'] for rec in old_ips_to_keep])
+final_ips = []
+for ip in ips:
+    if ip not in current_ips_set:
+        final_ips.append(ip)
+        current_ips_set.add(ip)
+    if len(final_ips) >= MAX_IPS - num_old_ips_to_keep:
+        break
+
+print(f"[INFO] 最终将添加 {len(final_ips)} 个IP记录：")
+for ip in final_ips:
+    print(ip)
 
 # 添加新IP记录
 new_added = 0
 skipped = 0
 for ip in final_ips:
-    if any(rec['content'] == ip for rec in unexpired_records):
+    if any(rec['content'] == ip for rec in old_ips_to_keep):
         skipped += 1
         continue
     data = {
@@ -292,8 +285,11 @@ for ip in final_ips:
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
     resp = requests.post(url, json=data, headers=headers)
-    print(f"[INFO] 添加记录 {record_name} -> {ip}")
-    new_added += 1
+    if resp.status_code == 200:
+        print(f"[INFO] 添加记录 {record_name} -> {ip}")
+        new_added += 1
+    else:
+        print(f"[ERROR] 添加记录失败： {record_name} -> {ip}, 响应: {resp.json()}")
     time.sleep(0.5)
 
 print(f"[INFO] 完成！新增 {new_added} 条记录，跳过 {skipped} 条已存在记录")
