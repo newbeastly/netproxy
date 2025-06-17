@@ -214,7 +214,7 @@ def delete_record(record_id, ip):
     """删除指定ID的记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}"
     resp = requests.delete(url, headers=headers)
-    print(f"[INFO] 删除记录 {record_id} -> {ip}")
+    print(f"[INFO] 删除IP记录： {ip}")
 
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
