@@ -34,9 +34,7 @@ def extract_ips_from_txt(filename_or_obj):
             if is_valid_ip(line):
                 ips.append(line)
         if ips:
-            print(f"[INFO] 从TXT文件 {source} 中获取到 {len(ips)} 个IP：")
-            for ip in ips:
-                print(ip)
+            print(f"[INFO] 从TXT文件 {source} 中获取到 {len(ips)} 个IP：", ", ".join(ips))
     except Exception as e:
         print(f"[ERROR] 读取TXT失败 {source}: {e}")
     return ips
@@ -58,9 +56,7 @@ def extract_ips_from_yaml(filename_or_obj):
             ips = y
         ips = [ip.strip() for ip in ips if isinstance(ip, str) and is_valid_ip(ip.strip())]
         if ips:
-            print(f"[INFO] 从YAML文件 {source} 中获取到 {len(ips)} 个IP：")
-            for ip in ips:
-                print(ip)
+            print(f"[INFO] 从YAML文件 {source} 中获取到 {len(ips)} 个IP：", ", ".join(ips))
     except Exception as e:
         print(f"[ERROR] 读取YAML失败 {source}: {e}")
     return ips
@@ -115,9 +111,7 @@ def extract_ips_from_url(url):
         resp.raise_for_status()
         lines = resp.text.splitlines()
         ips = [line.strip() for line in lines if is_valid_ip(line.strip())]
-        print(f"[INFO] 从远程URL {url} 获取到 {len(ips)} 个IP：")
-        for ip in ips:
-            print(ip)
+        print(f"[INFO] 从远程URL {url} 获取到 {len(ips)} 个IP：", ", ".join(ips))
         return ips
     except Exception as e:
         print(f"[ERROR] 下载远程IP列表失败 {url}: {e}")
@@ -134,9 +128,7 @@ def extract_ips_from_csv(filename):
                 if is_valid_ip(ip):
                     ips.append(ip)
         if ips:
-            print(f"[INFO] 从CSV文件 {filename} 中获取到 {len(ips)} 个IP：")
-            for ip in ips:
-                print(ip)
+            print(f"[INFO] 从CSV文件 {filename} 中获取到 {len(ips)} 个IP：", ", ".join(ips))
     except Exception as e:
         print(f"[ERROR] 读取CSV文件失败 {filename}: {e}")
     return ips
@@ -150,9 +142,7 @@ def extract_ips_from_any_file(filename):
         found = re.findall(r'(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)', content)
         ips = [ip for ip in found if is_valid_ip(ip)]
         if ips:
-            print(f"[INFO] 从本地文件 {filename} 中提取到 {len(ips)} 个IP：")
-            for ip in ips:
-                print(ip)
+            print(f"[INFO] 从本地文件 {filename} 中提取到 {len(ips)} 个IP：", ", ".join(ips))
     except Exception as e:
         print(f"[ERROR] 读取文件失败 {filename}: {e}")
     return ips
@@ -220,11 +210,11 @@ def list_a_records():
         page += 1
     return result
 
-def delete_record(record_id):
+def delete_record(record_id, ip):
     """删除指定ID的记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}"
     resp = requests.delete(url, headers=headers)
-    print(f"[INFO] 删除记录 {record_id}: {resp.status_code}")
+    print(f"[INFO] 删除记录 {record_id} -> {ip}")
 
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
@@ -248,14 +238,14 @@ for rec in netproxy_records:
     created_on = parse_cloudflare_time(rec.get('created_on', "1970-01-01T00:00:00Z"))
     age_hours = (now - created_on).total_seconds() / 3600
     if age_hours > 3:
-        expired_ids.append(rec['id'])
+        expired_ids.append((rec['id'], rec['content']))
     else:
         unexpired_records.append(rec)
 
 if expired_ids:
     print(f"[INFO] 发现 {len(expired_ids)} 条超过3小时的记录需要删除")
-    for record_id in expired_ids:
-        delete_record(record_id)
+    for record_id, ip in expired_ids:
+        delete_record(record_id, ip)
         time.sleep(0.2)
 else:
     print("[INFO] 所有记录均未超过3小时")
@@ -278,12 +268,12 @@ for ip in final_ips:
 records_to_delete = []
 for rec in unexpired_records:
     if rec['content'] not in final_ips:
-        records_to_delete.append(rec['id'])
+        records_to_delete.append((rec['id'], rec['content']))
 
 if records_to_delete:
     print(f"[INFO] 需要删除 {len(records_to_delete)} 条多余记录以保持最多 {MAX_IPS} 条记录")
-    for record_id in records_to_delete:
-        delete_record(record_id)
+    for record_id, ip in records_to_delete:
+        delete_record(record_id, ip)
         time.sleep(0.2)
 
 # 添加新IP记录
@@ -302,7 +292,7 @@ for ip in final_ips:
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
     resp = requests.post(url, json=data, headers=headers)
-    print(f"[INFO] 添加记录 {record_name} -> {ip}: {resp.json()}")
+    print(f"[INFO] 添加记录 {record_name} -> {ip}")
     new_added += 1
     time.sleep(0.5)
 
