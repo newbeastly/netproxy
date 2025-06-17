@@ -181,7 +181,7 @@ if len(local_ips) < MAX_IPS:
     need = MAX_IPS - len(local_ips)
     remote_ips = remote_ips[:need]
 ips = local_ips + remote_ips
-print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：")
+print(f"[INFO] 初步用于同步的IP数量：{len(ips)}，列表：")
 for ip in ips:
     print(ip)
 
