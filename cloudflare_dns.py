@@ -189,7 +189,7 @@ def list_a_records():
         page += 1
     return result
 
-def delete_record(record_id):
+def delete_record(record_id, ip):
     """删除指定ID的记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}"
     resp = requests.delete(url, headers=headers)
@@ -251,8 +251,26 @@ for ip in all_ips:
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
     resp = requests.post(url, json=data, headers=headers)
-    print(f"[INFO] 添加记录 {record_name} -> {ip}: {resp.json()}")
-    new_added += 1
+    if resp.status_code == 200:
+        print(ip)  # 仅输出IP地址并换行
+        new_added += 1
+    else:
+        print(f"[INFO] 添加记录 {record_name} -> {ip}: {resp.json()}")
     time.sleep(0.5)
+
+# 检查是否有多余记录需要删除
+records_to_delete = []
+for rec in netproxy_records:
+    if rec['content'] not in all_ips:
+        records_to_delete.append((rec['id'], rec['content']))
+
+if records_to_delete:
+    print(f"[INFO] 需要删除 {len(records_to_delete)} 条多余记录以保持最多 {MAX_IPS} 条记录")
+    for record_id, ip in records_to_delete:
+        delete_record(record_id, ip)
+        print(ip)  # 仅输出IP地址并换行
+        time.sleep(0.2)
+else:
+    print("[INFO] 所有记录均无需删除")
 
 print(f"[INFO] 完成！新增 {new_added} 条记录，跳过 {skipped} 条已存在记录")
