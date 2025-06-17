@@ -251,23 +251,6 @@ def delete_record(record_id, ip):
     else:
         print(f"[ERROR] 删除IP记录失败： {ip}, 响应: {resp.json()}")
 
-def list_a_records():
-    """获取所有A记录"""
-    url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&per_page=100"
-    result = []
-    page = 1
-    while True:
-        resp = requests.get(url + f"&page={page}", headers=headers).json()
-        if not resp.get("success") or "result" not in resp:
-            print("Cloudflare API 返回异常：", resp)
-            break
-        result += resp['result']
-        if page >= resp['result_info']['total_pages']:
-            break
-        page += 1
-    return result
-
-
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
     try:
@@ -328,7 +311,7 @@ else:
     print("[INFO] 所有记录均无需删除")
 
 # 合并未超时的旧IP和本次新IP，去重并保持顺序
-current_ips_set = set([rec['content'] for rec in old_ips_to_keep])
+current_ips_set = set([rec[1] for rec in old_ips_to_keep])
 final_ips = []
 for ip in ips:
     if ip not in current_ips_set:
