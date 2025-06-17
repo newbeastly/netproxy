@@ -233,7 +233,9 @@ else:
 all_ips = list(unexpired_ips.union(set(ips)))
 all_ips = all_ips[:10]  # 最多10条
 
-print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：{all_ips}")
+print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：")
+for ip in all_ips:
+    print(ip)  # 逐个打印IP实现换行
 
 # 添加新IP记录
 new_added = 0
@@ -268,7 +270,7 @@ if records_to_delete:
     print(f"[INFO] 需要删除 {len(records_to_delete)} 条多余记录以保持最多 {MAX_IPS} 条记录")
     for record_id, ip in records_to_delete:
         delete_record(record_id, ip)
-        print(ip)  # 仅输出IP地址并换行
+        print(ip)  # 逐个打印IP实现换行
         time.sleep(0.2)
 else:
     print("[INFO] 所有记录均无需删除")
