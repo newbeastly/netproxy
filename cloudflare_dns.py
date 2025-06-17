@@ -255,6 +255,31 @@ if records_to_delete:
 else:
     print("[INFO] 所有记录均无需删除")
 
+# 获取现有IP列表
+existing_records = [rec['content'] for rec in netproxy_records]
+
+# 第二轮筛选：与现有IP对比并去重
+ips_before_dedup = local_ips + remote_ips
+ips_after_dedup = [ip for ip in ips_before_dedup if ip not in existing_records]
+
+# 如果有重复IP被移除，则从远程IP中补充
+need补充 = MAX_IPS - len(ips_after_dedup)
+if need补充 > 0:
+    # 从远程IP池中获取新的IP补充
+    fresh_ips = []
+    for ip in remote_ips:
+        if ip not in ips_after_dedup and ip not in existing_records:
+            fresh_ips.append(ip)
+            if len(fresh_ips) >= need补充:
+                break
+    ips_after_dedup += fresh_ips
+
+# 最终用于同步的IP列表
+ips = ips_after_dedup[:MAX_IPS]
+print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：")
+for ip in ips:
+    print(ip)
+
 # 合并未超时的旧IP和本次新IP，去重并保持顺序
 current_ips_set = set([rec['content'] for rec in old_ips_to_keep])
 final_ips = []
@@ -293,6 +318,5 @@ for ip in final_ips:
     time.sleep(0.5)
 
 print(f"[INFO] 完成！新增 {new_added} 条记录，跳过 {skipped} 条已存在记录")
-
 
 
