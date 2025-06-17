@@ -5,16 +5,12 @@ import requests
 import time
 import re
 import rarfile
-from datetime import datetime, timezone
-import csv
+import datetime
 
 # 环境变量
 api_token = os.environ.get('CLOUDFLARE_API_KEY')
 zone_id = os.environ.get('CLOUDFLARE_ZONE_ID')
 domain = os.environ.get('CLOUDFLARE_DOMAIN')
-
-record_name = f"netproxy.{domain}"
-now = datetime.now(timezone.utc)
 
 def is_valid_ip(ip):
     if not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip):
@@ -37,7 +33,7 @@ def extract_ips_from_txt(filename_or_obj):
             if is_valid_ip(line):
                 ips.append(line)
         if ips:
-            print(f"[INFO] 从TXT文件 {source} 中获取到 {len(ips)} 个IP：", ", ".join(ips))
+            print(f"[INFO] 从TXT文件 {source} 中获取到 {len(ips)} 个IP：{ips}")
     except Exception as e:
         print(f"[ERROR] 读取TXT失败 {source}: {e}")
     return ips
@@ -59,7 +55,7 @@ def extract_ips_from_yaml(filename_or_obj):
             ips = y
         ips = [ip.strip() for ip in ips if isinstance(ip, str) and is_valid_ip(ip.strip())]
         if ips:
-            print(f"[INFO] 从YAML文件 {source} 中获取到 {len(ips)} 个IP：", ", ".join(ips))
+            print(f"[INFO] 从YAML文件 {source} 中获取到 {len(ips)} 个IP：{ips}")
     except Exception as e:
         print(f"[ERROR] 读取YAML失败 {source}: {e}")
     return ips
@@ -114,27 +110,11 @@ def extract_ips_from_url(url):
         resp.raise_for_status()
         lines = resp.text.splitlines()
         ips = [line.strip() for line in lines if is_valid_ip(line.strip())]
-        print(f"[INFO] 从远程URL {url} 获取到 {len(ips)} 个IP：", ", ".join(ips))
+        print(f"[INFO] 从远程URL {url} 获取到 {len(ips)} 个IP：{ips}")
         return ips
     except Exception as e:
         print(f"[ERROR] 下载远程IP列表失败 {url}: {e}")
         return []
-
-def extract_ips_from_csv(filename):
-    ips = []
-    try:
-        with open(filename, mode='r', encoding='utf-8') as csvfile:
-            reader = csv.reader(csvfile)
-            next(reader)  # Skip the header row
-            for row in reader:
-                ip = row[0].strip()
-                if is_valid_ip(ip):
-                    ips.append(ip)
-        if ips:
-            print(f"[INFO] 从CSV文件 {filename} 中获取到 {len(ips)} 个IP：", ", ".join(ips))
-    except Exception as e:
-        print(f"[ERROR] 读取CSV文件失败 {filename}: {e}")
-    return ips
 
 def extract_ips_from_any_file(filename):
     """通用正则提取所有本地文件中的IP地址"""
@@ -145,7 +125,7 @@ def extract_ips_from_any_file(filename):
         found = re.findall(r'(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)', content)
         ips = [ip for ip in found if is_valid_ip(ip)]
         if ips:
-            print(f"[INFO] 从本地文件 {filename} 中提取到 {len(ips)} 个IP：", ", ".join(ips))
+            print(f"[INFO] 从本地文件 {filename} 中提取到 {len(ips)} 个IP：{ips}")
     except Exception as e:
         print(f"[ERROR] 读取文件失败 {filename}: {e}")
     return ips
@@ -153,17 +133,15 @@ def extract_ips_from_any_file(filename):
 # 采集IP逻辑：优选本地再补远程
 MAX_IPS = 10
 local_dir = 'ip/local'
-local_ips = []
+local_ips = set()
 if os.path.isdir(local_dir):
     print(f"[INFO] 开始扫描本地目录：{local_dir}")
     for fn in os.listdir(local_dir):
         path = os.path.join(local_dir, fn)
         if os.path.isfile(path):
-            if fn.lower().endswith('.csv'):
-                new_ips = extract_ips_from_csv(path)
-            else:
-                new_ips = extract_ips_from_any_file(path)
-            local_ips.extend(new_ips)
+            new_ips = extract_ips_from_any_file(path)
+            local_ips.update(new_ips)
+local_ips = list(local_ips)
 print(f"[INFO] 本地收集到 {len(local_ips)} 个IP")
 
 # 如本地不足MAX_IPS，再补充远程
@@ -184,38 +162,7 @@ if len(local_ips) < MAX_IPS:
     need = MAX_IPS - len(local_ips)
     remote_ips = remote_ips[:need]
 ips = local_ips + remote_ips
-print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：")
-for ip in ips:
-    print(ip)
-
-
-# 第二轮筛选：与现有IP进行对比并去重
-# 如果netproxy_records未定义则使用空列表
-if 'netproxy_records' not in locals() and 'netproxy_records' not in globals():
-    print("[ERROR] netproxy_records未定义，使用空列表代替")
-    netproxy_records = []
-
-existing_records = [rec['content'] for rec in netproxy_records]
-ips_before_dedup = local_ips + remote_ips
-ips_after_dedup = [ip for ip in ips_before_dedup if ip not in existing_records]
-
-# 如果有重复IP被移除，则从远程IP池中补充
-need补充 = MAX_IPS - len(ips_after_dedup)
-if need补充 > 0:
-    # 从远程IP池中获取新的IP补充
-    fresh_ips = []
-    for ip in remote_ips:
-        if ip not in ips_after_dedup and ip not in existing_records:
-            fresh_ips.append(ip)
-            if len(fresh_ips) >= need补充:
-                break
-    ips_after_dedup += fresh_ips
-
-# 最终用于同步的IP列表
-ips = ips_after_dedup[:MAX_IPS]
-print(f"[INFO] 经过第二轮筛选后的最终IP数量：{len(ips)}，列表：")
-for ip in ips:
-    print(ip)
+print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：{ips}")
 
 if not ips:
     print("[WARNING] 没有找到任何可用IP，脚本结束。")
@@ -242,93 +189,57 @@ def list_a_records():
         page += 1
     return result
 
-def delete_record(record_id, ip):
+def delete_record(record_id):
     """删除指定ID的记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}"
     resp = requests.delete(url, headers=headers)
-    if resp.status_code == 200:
-        print(f"[INFO] 删除IP记录： {ip}")
-    else:
-        print(f"[ERROR] 删除IP记录失败： {ip}, 响应: {resp.json()}")
+    print(f"[INFO] 删除记录 {record_id}: {resp.status_code}")
 
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
     try:
-        return datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+        return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%S.%fZ")
     except ValueError:
-        return datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
 
 record_name = f"netproxy.{domain}"
-now = datetime.now(timezone.utc)
+now = datetime.datetime.utcnow()
 
 # 查询所有 netproxy.<domain> 的 A记录
 print(f"[INFO] 开始查询域名 {record_name} 的现有记录")
 all_a_records = list_a_records()
 netproxy_records = [rec for rec in all_a_records if rec['name'] == record_name]
 
-# 按创建时间降序排序，最新的在前面
-netproxy_records.sort(key=lambda x: parse_cloudflare_time(x.get('created_on', "1970-01-01T00:00:00Z")), reverse=True)
+# 检查是否有超时(>3小时)记录
+expired_ids = []
+unexpired_ips = set()
+for rec in netproxy_records:
+    created_on = parse_cloudflare_time(rec.get('created_on', "1970-01-01T00:00:00Z"))
+    age_hours = (now - created_on).total_seconds() / 3600
+    if age_hours > 3:
+        expired_ids.append(rec['id'])
+    else:
+        unexpired_ips.add(rec['content'])
 
-# 第二轮筛选：与现有IP进行对比并去重
-existing_records = [rec['content'] for rec in netproxy_records]
-ips_before_dedup = local_ips + remote_ips
-ips_after_dedup = [ip for ip in ips_before_dedup if ip not in existing_records]
-
-# 如果有重复IP被移除，则从远程IP中补充
-need补充 = MAX_IPS - len(ips_after_dedup)
-if need补充 > 0:
-    # 从远程IP池中获取新的IP补充
-    fresh_ips = []
-    for ip in remote_ips:
-        if ip not in ips_after_dedup and ip not in existing_records:
-            fresh_ips.append(ip)
-            if len(fresh_ips) >= need补充:
-                break
-    ips_after_dedup += fresh_ips
-
-# 最终用于同步的IP列表
-ips = ips_after_dedup[:MAX_IPS]
-print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：")
-for ip in ips:
-    print(ip)
-
-# 计算需要保留的旧记录数量
-num_new_ips = len(ips)
-num_old_ips_to_keep = max(MAX_IPS - num_new_ips, 0)
-
-# 保留最新的旧记录
-old_ips_to_keep = [(rec['id'], rec['content']) for rec in netproxy_records[:num_old_ips_to_keep]]
-
-# 需要删除的所有旧记录（包括不需要保留的旧记录）
-records_to_delete = [(rec['id'], rec['content']) for rec in netproxy_records[num_old_ips_to_keep:]]
-
-if records_to_delete:
-    print(f"[INFO] 需要删除 {len(records_to_delete)} 条多余记录以保持最多 {MAX_IPS} 条记录")
-    for record_id, ip in records_to_delete:
-        delete_record(record_id, ip)
+if expired_ids:
+    print(f"[INFO] 发现 {len(expired_ids)} 条超过3小时的记录需要删除")
+    for record_id in expired_ids:
+        delete_record(record_id)
         time.sleep(0.2)
 else:
-    print("[INFO] 所有记录均无需删除")
+    print("[INFO] 所有记录均未超过3小时")
 
-# 合并未超时的旧IP和本次新IP，去重并保持顺序
-current_ips_set = set([rec[1] for rec in old_ips_to_keep])
-final_ips = []
-for ip in ips:
-    if ip not in current_ips_set:
-        final_ips.append(ip)
-        current_ips_set.add(ip)
-    if len(final_ips) >= MAX_IPS - num_old_ips_to_keep:
-        break
+# 合并未超时的旧IP和本次新IP，去重，最多只保留10条
+all_ips = list(unexpired_ips.union(set(ips)))
+all_ips = all_ips[:10]  # 最多10条
 
-print(f"[INFO] 最终将添加 {len(final_ips)} 个IP记录：")
-for ip in final_ips:
-    print(ip)
+print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：{all_ips}")
 
 # 添加新IP记录
 new_added = 0
 skipped = 0
-for ip in final_ips:
-    if any(rec['content'] == ip for rec in old_ips_to_keep):
+for ip in all_ips:
+    if ip in unexpired_ips:
         skipped += 1
         continue
     data = {
@@ -340,11 +251,8 @@ for ip in final_ips:
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
     resp = requests.post(url, json=data, headers=headers)
-    if resp.status_code == 200:
-        print(f"[INFO] 添加记录 {record_name} -> {ip}")
-        new_added += 1
-    else:
-        print(f"[ERROR] 添加记录失败： {record_name} -> {ip}, 响应: {resp.json()}")
+    print(f"[INFO] 添加记录 {record_name} -> {ip}: {resp.json()}")
+    new_added += 1
     time.sleep(0.5)
 
 print(f"[INFO] 完成！新增 {new_added} 条记录，跳过 {skipped} 条已存在记录")
