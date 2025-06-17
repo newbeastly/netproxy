@@ -5,7 +5,8 @@ import requests
 import time
 import re
 import rarfile
-import datetime
+from datetime import datetime, timezone
+import csv
 
 # 环境变量
 api_token = os.environ.get('CLOUDFLARE_API_KEY')
@@ -116,6 +117,22 @@ def extract_ips_from_url(url):
         print(f"[ERROR] 下载远程IP列表失败 {url}: {e}")
         return []
 
+def extract_ips_from_csv(filename):
+    ips = []
+    try:
+        with open(filename, mode='r', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            next(reader)  # Skip the header row
+            for row in reader:
+                ip = row[0].strip()
+                if is_valid_ip(ip):
+                    ips.append(ip)
+        if ips:
+            print(f"[INFO] 从CSV文件 {filename} 中获取到 {len(ips)} 个IP：{ips}")
+    except Exception as e:
+        print(f"[ERROR] 读取CSV文件失败 {filename}: {e}")
+    return ips
+
 def extract_ips_from_any_file(filename):
     """通用正则提取所有本地文件中的IP地址"""
     ips = []
@@ -139,7 +156,10 @@ if os.path.isdir(local_dir):
     for fn in os.listdir(local_dir):
         path = os.path.join(local_dir, fn)
         if os.path.isfile(path):
-            new_ips = extract_ips_from_any_file(path)
+            if fn.lower().endswith('.csv'):
+                new_ips = extract_ips_from_csv(path)
+            else:
+                new_ips = extract_ips_from_any_file(path)
             local_ips.update(new_ips)
 local_ips = list(local_ips)
 print(f"[INFO] 本地收集到 {len(local_ips)} 个IP")
@@ -198,12 +218,12 @@ def delete_record(record_id):
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
     try:
-        return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%S.%fZ")
+        return datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
     except ValueError:
-        return datetime.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
+        return datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 record_name = f"netproxy.{domain}"
-now = datetime.datetime.utcnow()
+now = datetime.now(timezone.utc)
 
 # 查询所有 netproxy.<domain> 的 A记录
 print(f"[INFO] 开始查询域名 {record_name} 的现有记录")
