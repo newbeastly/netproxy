@@ -13,6 +13,9 @@ api_token = os.environ.get('CLOUDFLARE_API_KEY')
 zone_id = os.environ.get('CLOUDFLARE_ZONE_ID')
 domain = os.environ.get('CLOUDFLARE_DOMAIN')
 
+record_name = f"netproxy.{domain}"
+now = datetime.now(timezone.utc)
+
 def is_valid_ip(ip):
     if not re.match(r'^(\d{1,3}\.){3}\d{1,3}$', ip):
         return False
@@ -185,13 +188,6 @@ print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：")
 for ip in ips:
     print(ip)
 
-# 查询所有 netproxy.<domain> 的 A记录
-print(f"[INFO] 开始查询域名 {record_name} 的现有记录")
-all_a_records = list_a_records()
-netproxy_records = [rec for rec in all_a_records if rec['name'] == record_name]
-
-# 按创建时间降序排序，最新的在前面
-netproxy_records.sort(key=lambda x: parse_cloudflare_time(x.get('created_on', "1970-01-01T00:00:00Z")), reverse=True)
 
 # 第二轮筛选：与现有IP进行对比并去重
 existing_records = [rec['content'] for rec in netproxy_records]
@@ -250,6 +246,23 @@ def delete_record(record_id, ip):
     else:
         print(f"[ERROR] 删除IP记录失败： {ip}, 响应: {resp.json()}")
 
+def list_a_records():
+    """获取所有A记录"""
+    url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&per_page=100"
+    result = []
+    page = 1
+    while True:
+        resp = requests.get(url + f"&page={page}", headers=headers).json()
+        if not resp.get("success") or "result" not in resp:
+            print("Cloudflare API 返回异常：", resp)
+            break
+        result += resp['result']
+        if page >= resp['result_info']['total_pages']:
+            break
+        page += 1
+    return result
+
+
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
     try:
@@ -267,6 +280,29 @@ netproxy_records = [rec for rec in all_a_records if rec['name'] == record_name]
 
 # 按创建时间降序排序，最新的在前面
 netproxy_records.sort(key=lambda x: parse_cloudflare_time(x.get('created_on', "1970-01-01T00:00:00Z")), reverse=True)
+
+# 第二轮筛选：与现有IP进行对比并去重
+existing_records = [rec['content'] for rec in netproxy_records]
+ips_before_dedup = local_ips + remote_ips
+ips_after_dedup = [ip for ip in ips_before_dedup if ip not in existing_records]
+
+# 如果有重复IP被移除，则从远程IP中补充
+need补充 = MAX_IPS - len(ips_after_dedup)
+if need补充 > 0:
+    # 从远程IP池中获取新的IP补充
+    fresh_ips = []
+    for ip in remote_ips:
+        if ip not in ips_after_dedup and ip not in existing_records:
+            fresh_ips.append(ip)
+            if len(fresh_ips) >= need补充:
+                break
+    ips_after_dedup += fresh_ips
+
+# 最终用于同步的IP列表
+ips = ips_after_dedup[:MAX_IPS]
+print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：")
+for ip in ips:
+    print(ip)
 
 # 计算需要保留的旧记录数量
 num_new_ips = len(ips)
