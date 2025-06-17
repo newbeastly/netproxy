@@ -181,13 +181,21 @@ if len(local_ips) < MAX_IPS:
     need = MAX_IPS - len(local_ips)
     remote_ips = remote_ips[:need]
 ips = local_ips + remote_ips
-print(f"[INFO] 初步用于同步的IP数量：{len(ips)}，列表：")
+print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：")
 for ip in ips:
     print(ip)
 
+# 查询所有 netproxy.<domain> 的 A记录
+print(f"[INFO] 开始查询域名 {record_name} 的现有记录")
+all_a_records = list_a_records()
+netproxy_records = [rec for rec in all_a_records if rec['name'] == record_name]
+
+# 按创建时间降序排序，最新的在前面
+netproxy_records.sort(key=lambda x: parse_cloudflare_time(x.get('created_on', "1970-01-01T00:00:00Z")), reverse=True)
+
 # 第二轮筛选：与现有IP进行对比并去重
 existing_records = [rec['content'] for rec in netproxy_records]
-ips_before_dedup = ips.copy()
+ips_before_dedup = local_ips + remote_ips
 ips_after_dedup = [ip for ip in ips_before_dedup if ip not in existing_records]
 
 # 如果有重复IP被移除，则从远程IP池中补充
