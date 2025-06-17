@@ -34,7 +34,9 @@ def extract_ips_from_txt(filename_or_obj):
             if is_valid_ip(line):
                 ips.append(line)
         if ips:
-            print(f"[INFO] 从TXT文件 {source} 中获取到 {len(ips)} 个IP：{ips}")
+            print(f"[INFO] 从TXT文件 {source} 中获取到 {len(ips)} 个IP：")
+            for ip in ips:
+                print(ip)
     except Exception as e:
         print(f"[ERROR] 读取TXT失败 {source}: {e}")
     return ips
@@ -56,7 +58,9 @@ def extract_ips_from_yaml(filename_or_obj):
             ips = y
         ips = [ip.strip() for ip in ips if isinstance(ip, str) and is_valid_ip(ip.strip())]
         if ips:
-            print(f"[INFO] 从YAML文件 {source} 中获取到 {len(ips)} 个IP：{ips}")
+            print(f"[INFO] 从YAML文件 {source} 中获取到 {len(ips)} 个IP：")
+            for ip in ips:
+                print(ip)
     except Exception as e:
         print(f"[ERROR] 读取YAML失败 {source}: {e}")
     return ips
@@ -111,7 +115,9 @@ def extract_ips_from_url(url):
         resp.raise_for_status()
         lines = resp.text.splitlines()
         ips = [line.strip() for line in lines if is_valid_ip(line.strip())]
-        print(f"[INFO] 从远程URL {url} 获取到 {len(ips)} 个IP：{ips}")
+        print(f"[INFO] 从远程URL {url} 获取到 {len(ips)} 个IP：")
+        for ip in ips:
+            print(ip)
         return ips
     except Exception as e:
         print(f"[ERROR] 下载远程IP列表失败 {url}: {e}")
@@ -128,7 +134,9 @@ def extract_ips_from_csv(filename):
                 if is_valid_ip(ip):
                     ips.append(ip)
         if ips:
-            print(f"[INFO] 从CSV文件 {filename} 中获取到 {len(ips)} 个IP：{ips}")
+            print(f"[INFO] 从CSV文件 {filename} 中获取到 {len(ips)} 个IP：")
+            for ip in ips:
+                print(ip)
     except Exception as e:
         print(f"[ERROR] 读取CSV文件失败 {filename}: {e}")
     return ips
@@ -142,7 +150,9 @@ def extract_ips_from_any_file(filename):
         found = re.findall(r'(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)', content)
         ips = [ip for ip in found if is_valid_ip(ip)]
         if ips:
-            print(f"[INFO] 从本地文件 {filename} 中提取到 {len(ips)} 个IP：{ips}")
+            print(f"[INFO] 从本地文件 {filename} 中提取到 {len(ips)} 个IP：")
+            for ip in ips:
+                print(ip)
     except Exception as e:
         print(f"[ERROR] 读取文件失败 {filename}: {e}")
     return ips
@@ -150,7 +160,7 @@ def extract_ips_from_any_file(filename):
 # 采集IP逻辑：优选本地再补远程
 MAX_IPS = 10
 local_dir = 'ip/local'
-local_ips = set()
+local_ips = []
 if os.path.isdir(local_dir):
     print(f"[INFO] 开始扫描本地目录：{local_dir}")
     for fn in os.listdir(local_dir):
@@ -160,8 +170,7 @@ if os.path.isdir(local_dir):
                 new_ips = extract_ips_from_csv(path)
             else:
                 new_ips = extract_ips_from_any_file(path)
-            local_ips.update(new_ips)
-local_ips = list(local_ips)
+            local_ips.extend(new_ips)
 print(f"[INFO] 本地收集到 {len(local_ips)} 个IP")
 
 # 如本地不足MAX_IPS，再补充远程
@@ -182,7 +191,9 @@ if len(local_ips) < MAX_IPS:
     need = MAX_IPS - len(local_ips)
     remote_ips = remote_ips[:need]
 ips = local_ips + remote_ips
-print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：{ips}")
+print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：")
+for ip in ips:
+    print(ip)
 
 if not ips:
     print("[WARNING] 没有找到任何可用IP，脚本结束。")
@@ -249,16 +260,25 @@ if expired_ids:
 else:
     print("[INFO] 所有记录均未超过3小时")
 
-# 合并未超时的旧IP和本次新IP，去重
-all_ips = list(set([rec['content'] for rec in unexpired_records]).union(set(ips)))
+# 合并未超时的旧IP和本次新IP，去重并保持顺序
+current_ips_set = set([rec['content'] for rec in unexpired_records])
+final_ips = []
+for ip in ips:
+    if ip not in current_ips_set:
+        final_ips.append(ip)
+        current_ips_set.add(ip)
+    if len(final_ips) >= MAX_IPS:
+        break
 
-# 如果新收集的IP地址数量超过MAX_IPS，只保留前MAX_IPS个
-final_ips = list(all_ips)[:MAX_IPS]
-print(f"[INFO] 最终将添加 {len(final_ips)} 个IP记录：{final_ips}")
+print(f"[INFO] 最终将添加 {len(final_ips)} 个IP记录：")
+for ip in final_ips:
+    print(ip)
 
 # 清理多余的记录，只保留最新的10条记录
-current_ips_set = set([rec['content'] for rec in unexpired_records])
-records_to_delete = [rec['id'] for rec in unexpired_records if rec['content'] not in final_ips]
+records_to_delete = []
+for rec in unexpired_records:
+    if rec['content'] not in final_ips:
+        records_to_delete.append(rec['id'])
 
 if records_to_delete:
     print(f"[INFO] 需要删除 {len(records_to_delete)} 条多余记录以保持最多 {MAX_IPS} 条记录")
