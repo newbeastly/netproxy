@@ -130,44 +130,6 @@ def extract_ips_from_any_file(filename):
         print(f"[ERROR] 读取文件失败 {filename}: {e}")
     return ips
 
-# 采集IP逻辑：优选本地再补远程
-MAX_IPS = 10
-local_dir = 'ip/local'
-local_ips = set()
-if os.path.isdir(local_dir):
-    print(f"[INFO] 开始扫描本地目录：{local_dir}")
-    for fn in os.listdir(local_dir):
-        path = os.path.join(local_dir, fn)
-        if os.path.isfile(path):
-            new_ips = extract_ips_from_any_file(path)
-            local_ips.update(new_ips)
-local_ips = list(local_ips)
-print(f"[INFO] 本地收集到 {len(local_ips)} 个IP")
-
-# 如本地不足MAX_IPS，再补充远程
-remote_ips = []
-if len(local_ips) < MAX_IPS:
-    url_file = 'ip/url'
-    if os.path.exists(url_file):
-        print(f"[INFO] 处理远程URL文件：{url_file}")
-        with open(url_file, encoding="utf-8") as f:
-            for line in f:
-                url = line.strip()
-                if url:
-                    new_ips = extract_ips_from_url(url)
-                    remote_ips.extend(new_ips)
-    # 去除已在本地的IP
-    remote_ips = [ip for ip in remote_ips if ip not in local_ips]
-    # 只补充到足额
-    need = MAX_IPS - len(local_ips)
-    remote_ips = remote_ips[:need]
-ips = local_ips + remote_ips
-print(f"[INFO] 最终用于同步的IP数量：{len(ips)}，列表：{ips}")
-
-if not ips:
-    print("[WARNING] 没有找到任何可用IP，脚本结束。")
-    exit(0)
-
 headers = {
     "Authorization": f"Bearer {api_token}",
     "Content-Type": "application/json"
@@ -189,7 +151,7 @@ def list_a_records():
         page += 1
     return result
 
-def delete_record(record_id, ip):
+def delete_record(record_id):
     """删除指定ID的记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}"
     resp = requests.delete(url, headers=headers)
@@ -229,13 +191,52 @@ if expired_ids:
 else:
     print("[INFO] 所有记录均未超过3小时")
 
-# 合并未超时的旧IP和本次新IP，去重，最多只保留10条
-all_ips = list(unexpired_ips.union(set(ips)))
-all_ips = all_ips[:10]  # 最多10条
+# 采集IP逻辑：优选本地再补远程
+MAX_IPS = 10
+local_dir = 'ip/local'
+local_ips = set()
+if os.path.isdir(local_dir):
+    print(f"[INFO] 开始扫描本地目录：{local_dir}")
+    for fn in os.listdir(local_dir):
+        path = os.path.join(local_dir, fn)
+        if os.path.isfile(path):
+            new_ips = extract_ips_from_any_file(path)
+            local_ips.update(new_ips)
+local_ips = list(local_ips)
+print(f"[INFO] 本地收集到 {len(local_ips)} 个IP")
 
-print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：")
-for ip in all_ips:
-    print(ip)  # 逐个打印IP实现换行
+# 第二轮筛选：与现有IP去重
+existing_ips = set(unexpired_ips)
+local_ips = [ip for ip in local_ips if ip not in existing_ips]
+
+# 如本地不足MAX_IPS，再补充远程
+remote_ips = []
+if len(local_ips) < MAX_IPS:
+    url_file = 'ip/url'
+    if os.path.exists(url_file):
+        print(f"[INFO] 处理远程URL文件：{url_file}")
+        with open(url_file, encoding="utf-8") as f:
+            for line in f:
+                url = line.strip()
+                if url:
+                    new_ips = extract_ips_from_url(url)
+                    remote_ips.extend(new_ips)
+    # 去除已在本地和现有IP的IP
+    remote_ips = [ip for ip in remote_ips if ip not in local_ips and ip not in existing_ips]
+    # 只补充到足额
+    need = MAX_IPS - len(local_ips)
+    remote_ips = remote_ips[:need]
+ips = local_ips + remote_ips
+print(f"[INFO] 初步用于同步的IP数量：{len(ips)}，列表：{ips}")
+
+# 最终合并逻辑
+all_ips = ips + list(existing_ips)[:MAX_IPS - len(ips)]
+all_ips = list(set(all_ips))[:MAX_IPS]
+print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：{all_ips}")
+
+if not ips:
+    print("[WARNING] 没有找到任何可用IP，脚本结束。")
+    exit(0)
 
 # 添加新IP记录
 new_added = 0
@@ -253,26 +254,8 @@ for ip in all_ips:
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
     resp = requests.post(url, json=data, headers=headers)
-    if resp.status_code == 200:
-        print(ip)  # 仅输出IP地址并换行
-        new_added += 1
-    else:
-        print(f"[INFO] 添加记录 {record_name} -> {ip}: {resp.json()}")
+    print(f"[INFO] 添加记录 {record_name} -> {ip}: {resp.json()}")
+    new_added += 1
     time.sleep(0.5)
-
-# 检查是否有多余记录需要删除
-records_to_delete = []
-for rec in netproxy_records:
-    if rec['content'] not in all_ips:
-        records_to_delete.append((rec['id'], rec['content']))
-
-if records_to_delete:
-    print(f"[INFO] 需要删除 {len(records_to_delete)} 条多余记录以保持最多 {MAX_IPS} 条记录")
-    for record_id, ip in records_to_delete:
-        delete_record(record_id, ip)
-        print(ip)  # 逐个打印IP实现换行
-        time.sleep(0.2)
-else:
-    print("[INFO] 所有记录均无需删除")
 
 print(f"[INFO] 完成！新增 {new_added} 条记录，跳过 {skipped} 条已存在记录")
