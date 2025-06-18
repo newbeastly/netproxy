@@ -260,7 +260,7 @@ for ip in all_ips:
     }
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
     resp = requests.post(url, json=data, headers=headers)
-    print(f"[INFO] 添加记录 {record_name} -> {ip}: {resp.json()}")
+    print(f"[INFO] 添加记录：{ip}")
     new_added += 1
     time.sleep(0.5)
 
