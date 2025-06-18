@@ -247,10 +247,20 @@ if not ips:
 # 添加新IP记录
 new_added = 0
 skipped = 0
+
+# 获取当前有效记录数量
+current_records = [rec for rec in netproxy_records if rec['content'] in all_ips]
+current_count = len(current_records)
+
 for ip in all_ips:
+    if current_count >= MAX_IPS:
+        print(f"[INFO] 当前有效记录已达上限({MAX_IPS}条)，停止添加新记录。")
+        break
+
     if ip in unexpired_ips:
         skipped += 1
         continue
+
     data = {
         "type": "A",
         "name": record_name,
@@ -262,6 +272,7 @@ for ip in all_ips:
     resp = requests.post(url, json=data, headers=headers)
     print(f"[INFO] 添加记录：{ip}")
     new_added += 1
+    current_count += 1  # 更新当前记录数量
     time.sleep(0.5)
 
 print(f"[INFO] 完成！新增 {new_added} 条记录，跳过 {skipped} 条已存在记录")
