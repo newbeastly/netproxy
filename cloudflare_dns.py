@@ -186,8 +186,12 @@ for rec in netproxy_records:
 if expired_ids:
     print(f"[INFO] 发现 {len(expired_ids)} 条超过3小时的记录需要删除")
     for record_id in expired_ids:
-        delete_record(record_id)
-        time.sleep(0.2)
+        # 根据内存偏好优化删除逻辑：增加错误码处理
+        try:
+            delete_record(record_id)
+            time.sleep(0.2)
+        except requests.exceptions.RequestException as e:
+            print(f"[ERROR] 删除记录失败 {record_id}: {str(e)}")
 else:
     print("[INFO] 所有记录均未超过3小时")
 
@@ -232,7 +236,9 @@ print(f"[INFO] 初步用于同步的IP数量：{len(ips)}，列表：{ips}")
 # 最终合并逻辑
 all_ips = ips + list(existing_ips)[:MAX_IPS - len(ips)]
 all_ips = list(set(all_ips))[:MAX_IPS]
-print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：{all_ips}")
+print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：")
+for ip in all_ips:  # 根据日志规范优化输出格式
+    print(ip)
 
 if not ips:
     print("[WARNING] 没有找到任何可用IP，脚本结束。")
