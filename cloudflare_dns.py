@@ -155,7 +155,10 @@ def delete_record(record_id):
     """删除指定ID的记录"""
     url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}"
     resp = requests.delete(url, headers=headers)
-    print(f"[INFO] 删除记录 {record_id}: {resp.status_code}")
+    # 根据内存偏好优化日志输出：仅保留关键数据（IP地址）
+    ip_address = next((rec['content'] for rec in netproxy_records if rec['id'] == record_id), record_id)
+    print(f"[INFO] 删除记录 {ip_address}")
+    time.sleep(0.2)
 
 def parse_cloudflare_time(timestr):
     """解析Cloudflare时间格式，兼容带微秒和不带微秒"""
