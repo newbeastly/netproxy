@@ -204,7 +204,7 @@ local_dir = 'ip/local'
 local_ips = set()
 if os.path.isdir(local_dir):
     print(f"[INFO] 开始扫描本地目录：{local_dir}")
-    for fn in os.listdir(local_dir):
+    for fn in sorted(os.listdir(local_dir)):  # 按文件名排序处理
         path = os.path.join(local_dir, fn)
         if os.path.isfile(path):
             new_ips = extract_ips_from_any_file(path)
@@ -237,10 +237,19 @@ ips = local_ips + remote_ips
 print(f"[INFO] 初步用于同步的IP数量：{len(ips)}，列表：{ips}")
 
 # 最终合并逻辑
-all_ips = ips + list(existing_ips)[:MAX_IPS - len(ips)]
-all_ips = list(set(all_ips))[:MAX_IPS]
+ips = list(set(ips))  # 对新获取的IP自身去重
+print(f"[INFO] 去重后可用新IP数量：{len(ips)}")
+
+# 根据内存规范第7条：新IP达到最大值时应全部添加
+if len(ips) >= MAX_IPS:
+    all_ips = ips[:MAX_IPS]  # 直接使用新IP替换旧记录
+else:
+    # 根据内存规范第15条：合并新旧记录时必须全局去重
+    total_records = list(existing_ips) + ips
+    all_ips = list(set(total_records))[:MAX_IPS]  # 全局去重后取前MAX_IPS个
+
 print(f"[INFO] 最终将添加 {len(all_ips)} 个IP记录：")
-for ip in all_ips:  # 根据日志规范优化输出格式
+for ip in all_ips:
     print(ip)
 
 if not ips:
