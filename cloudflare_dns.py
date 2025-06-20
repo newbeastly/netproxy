@@ -201,15 +201,17 @@ else:
 # 采集IP逻辑：优选本地再补远程
 MAX_IPS = 10
 local_dir = 'ip/local'
-local_ips = set()
+local_ips = []  # ✅ 改用列表保持顺序
 if os.path.isdir(local_dir):
     print(f"[INFO] 开始扫描本地目录：{local_dir}")
     for fn in sorted(os.listdir(local_dir)):  # 按文件名排序处理
         path = os.path.join(local_dir, fn)
         if os.path.isfile(path):
-            new_ips = extract_ips_from_any_file(path)
-            local_ips.update(new_ips)
-local_ips = list(local_ips)
+            new_ips = extract_ips_from_any_file(path)  # 保持文件内原始顺序
+            # 保留顺序的去重合并
+            for ip in new_ips:
+                if ip not in local_ips:  # 🔁 顺序保留的去重
+                    local_ips.append(ip)
 print(f"[INFO] 本地收集到 {len(local_ips)} 个IP")
 
 # 第二轮筛选：与现有IP去重
