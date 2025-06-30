@@ -105,7 +105,7 @@ def main():
                 for ip in extract_ips_from_file(path):
                     if ip not in local_ips:
                         local_ips.append(ip)
-    print(f"[INFO] 本地收集到 {len(local_ips)} 个IP")
+    print(f"[INFO] 本地收集到 {len(local_ips)} 个IP: {local_ips}")
 
     # 去除已存在
     new_ips = [ip for ip in local_ips if ip not in valid_ips]
@@ -167,9 +167,20 @@ def main():
         added += 1
         time.sleep(0.5)
 
-    # 再次确认总数量，不足补充提示
+    # 再次确认总数量，如大于IP_MAX则清理多余
     final_records = list_a_records()
-    print(f"[INFO] 现有A记录总数: {len(final_records)} (上限: {IP_MAX})")
+    if len(final_records) > IP_MAX:
+        # 按创建时间排序，保留最新的IP_MAX条，其余删除
+        sorted_records = sorted(final_records, key=lambda rec: parse_time(rec["created_on"]))
+        records_to_delete = sorted_records[:-IP_MAX]
+        print(f"[INFO] A记录数量超出上限，需删除 {len(records_to_delete)} 条多余记录")
+        for rec in records_to_delete:
+            delete_record(rec["id"], rec["content"])
+        # 最终确认
+        final_records = list_a_records()
+        print(f"[INFO] 清理后A记录总数: {len(final_records)} (上限: {IP_MAX})")
+    else:
+        print(f"[INFO] 现有A记录总数: {len(final_records)} (上限: {IP_MAX})")
 
 if __name__ == "__main__":
     main()
