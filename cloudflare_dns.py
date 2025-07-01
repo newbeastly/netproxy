@@ -8,7 +8,7 @@ import time
 API_TOKEN = os.environ.get('CLOUDFLARE_API_KEY')
 ZONE_ID = os.environ.get('CLOUDFLARE_ZONE_ID')
 DOMAIN = os.environ.get('CLOUDFLARE_DOMAIN')
-IP_MAX = int(os.environ.get('IP_MAX', 10))  # 支持自定义最大A记录数量
+IP_MAX = int(os.environ.get('IP_MAX', 2))  # 支持自定义最大A记录数量
 
 RECORD_NAME = f"netproxy.{DOMAIN}"
 HEADERS = {
